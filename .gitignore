@@ -1,0 +1,53 @@
+# --- 二进制与产物：本仓库一律不含 ---
+*.apk
+*.apex
+*.so
+*.img
+*.bin
+*.dat
+*.pak
+*.ttf
+*.woff*
+*.mp4
+*.mkv
+*.zip
+*.tar.gz
+
+# 分区备份 / DA 落盘（含 EMMC CID、nvram 校准数据、proinfo 里的 IMEI/MEID）
+backup/
+/tmp/
+*.dump
+
+# 签名材料与密钥
+*.keystore
+*.jks
+*.p12
+*.pem
+*.der
+*.RSA
+*.SF
+*.MF
+local.properties
+
+# 日志与临时（日志里含序列号、IPv6、APN、meid）
+*.log
+agent_fatal.txt
+da2_fatal.txt
+/state
+.state
+*.state
+
+# 截图证据（可能拍到号码、通知内容）
+*.png
+*.jpg
+*.jpeg
+
+# Python / 工具链
+__pycache__/
+*.pyc
+.venv/
+venv/
+rootvenv/
+.idea/
+.vscode/
+.DS_Store
