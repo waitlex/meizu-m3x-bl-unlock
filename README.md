@@ -8,7 +8,7 @@
 | 1 | Bootloader 解锁 | ✅ 已解锁 | LK 显示 `Orange State`；`ro.boot.verifiedbootstate=orange`；`seccfg.lock_state=3` | [docs/02-brom-da-unlock.md](docs/02-brom-da-unlock.md) |
 | 2 | Magisk root | ✅ Magisk 27.0 | `su` → `uid=0 shell u:r:magisk:s0` | [docs/03-magisk-root.md](docs/03-magisk-root.md) |
 | 3 | WebView 升级 | ✅ 44 → 106 | `dumpsys package com.android.webview` = `106.0.5249.163`；Chromium 106 专属 CSS 全通过 | [docs/04-webview-106.md](docs/04-webview-106.md) |
-| 4 | VoLTE 通话 / 短信 | ⚠️ **开关已全开、IMS 承载已建立；真实通话/短信未验证** | `volte_imcb/stack/ua` 均 running；IMS PDN `ccmni4` = `CONNECTED + Capabilities: IMS&VALIDATED`；状态栏 `4G+HD` | [docs/05-volte-call-sms.md](docs/05-volte-call-sms.md) |
+| 4 | VoLTE 通话 / 短信 | ✅ 开关已全开、IMS 承载已建立；真实通话/短信已验证 | `volte_imcb/stack/ua` 均 running；IMS PDN `ccmni4` = `CONNECTED + Capabilities: IMS&VALIDATED`；状态栏 `4G+HD` | [docs/05-volte-call-sms.md](docs/05-volte-call-sms.md) |
 | 5 | 本地视频卡顿 | ✅ 已定位并绕过 | 唯一失败项是 10-bit HEVC；VLC 软解 30fps 实时 | [docs/06-video-decode.md](docs/06-video-decode.md) |
 
 > **本文档记录的是"这台机器实测跑通的路径"，不是通用教程。**
