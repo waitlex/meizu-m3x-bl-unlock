@@ -81,6 +81,7 @@ config.reconnect = False
 | 签名报错 | 缺 `-digestalg SHA-256 -sigalg SHA256withRSA`（新 JDK 禁 SHA1）；或用了纯 v2 签名（Android 6 不认） |
 | 107+ 装不上 | Bromite 107 起 `minSdkVersion=24`，Android 6 到顶就是 **106** |
 | 自带浏览器没变化 | 魅蓝 X 自带浏览器用**自带**的 Chromium 45，不走系统 WebView。用 Via/Chrome 验证 |
+| **图库/全局搜索一开就闪退、Via 搜索时闪退** | 不是打包坏了（`.so` 与 APK 内条目 md5 逐字节一致）。106 在这台 Android 6 上：`arm` 进程取到垃圾表指针 → `ldm` 对齐异常 `SIGBUS/BUS_ADRALN`；`arm64` 走到 `brk #0`（Chromium `IMMEDIATE_CRASH()`）→ `SIGTRAP`。停用模块即恢复，详见 docs/04 末尾 |
 
 ## 7. 已证伪路线（除非有新证据，别重试）
 
@@ -96,6 +97,7 @@ config.reconnect = False
 | 换 Windows / 换主机 | BROM 固件层的 STALL 与主机无关 | 不解决 |
 | "必须 root" | BROM 阶段要 root；**DA2（`0e8d:2001`）用户态实测可用** | 先探测，不预设 |
 | 升级系统解决 10-bit 解码 | MT6757D 缺的是硬件 profile 支持 | 无效，官方上限 Flyme 7 / Android 6.0.1 |
+| 用 Bromite 106 当系统 WebView | 装得上、64 位页面能渲染，但 32 位应用 100% 起不来（22+1 条 `SIGBUS` tombstone），Via `SIGTRAP` 6 条 | 已停用；要新内核只能换构建或接受 32 位应用不可用 |
 
 ---
 

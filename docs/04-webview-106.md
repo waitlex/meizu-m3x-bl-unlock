@@ -1,5 +1,10 @@
 # 04 · WebView 升级：把 Bromite 106 伪装成 `com.android.webview`
 
+> **先读结论：这条路在本机上不划算。** 模块能装上、64 位页面能渲染出 Chromium 106 的
+> 新特性，但**所有 32 位应用会 100% 打不开**（图库、全局搜索），Via 搜索时也会闪退。
+> 机制、反汇编证据与回退方法见文末「实机副作用」一节。
+> 打包/挂载链路本身（AXML + `resources.arsc` + `lib/<isa>` 三处对齐）是打通的，可放心复用。
+
 ## 问题
 
 Flyme 5.2.8.3A 自带的 WebView provider 是魅族魔改版（内核 Chromium 44/45），
@@ -144,14 +149,61 @@ adb shell su -c "cat /proc/$(adb shell pidproc)/maps" | grep libwebviewchromium
 这四项在 Chromium 88+ 才齐（`:has()` 实际是 105），Chrome 45 一个都不支持。
 本项目实测页面见 `scripts/webview/css_probe.html`，四项全部生效 → 内核确为 106。
 
+> 这只证明**64 位渲染路径**可用。它同时打死了所有 32 位应用，见下一节。
+
 > **别用魅族自带「浏览器」验证。** 它自带 Chromium 45 引擎（UA 也是硬编码的），
 > **不走系统 WebView provider**——`/proc/<pid>/maps` 里根本没有 `libwebviewchromium`。
 > 要享受新内核，请用走系统 WebView 的应用（HTML 查看器、各类第三方浏览器、App 内嵌页）。
 
+## ⚠ 实机副作用：32 位应用必崩（本模块现已停用）
+
+【实机 2026-11-01 20:30】装上 106 之后，凡是走系统 WebView provider 的应用：
+
+| 现象 | 进程 | ABI | 信号 |
+| --- | --- | --- | --- |
+| 图库打不开（100% 复现） | `com.meizu.media.gallery` 5.4.1 | `arm` | `SIGBUS / BUS_ADRALN` |
+| 全局搜索打不开 | `com.meizu.net.search` | `arm` | `SIGBUS / BUS_ADRALN` |
+| 搜索网页时闪退 | `mark.via` | `arm64` | `SIGTRAP / TRAP_BRKPT` |
+
+`/data/system/dropbox` 里 30 条 tombstone 聚合：22 条图库 + 1 条搜索（`arm`，
+**每一条的 12 层栈完全相同**）+ 6 条 Via（`arm64`）+ 1 条无关。
+
+**先排除打包错误**：设备上两份 `.so` 与 `webview.apk` 内
+`lib/armeabi-v7a/`、`lib/arm64-v8a/` 条目逐字节一致
+（md5 `949cf71862d3b1c03f4422f263e83d69` / `5a4858012aaf6583becfc7665e743922`），
+APK 与 `.so` 也确实来自同一次构建。不是解压损坏，也不是 ABI 放错目录。
+
+把 tombstone 的 pc 偏移直接反汇编到 Bromite 的 arm `.so` 上（偏移即文件内地址）：
+
+```
+0x0023f6d68   ldr   r0, [r0, #4]        ; 取内部表指针
+0x0023f6d6a   add.w r0, r0, r1, lsl #2
+0x0023f6d6e   ldm   r0!, {r1}           ; ← 故障点，r0 = 0xdb29ab0f
+```
+
+`r0` 每次不同但都是奇数（`0xdada7b0f` / `0xdaed5b0f` / `0xdb29ab0f`），
+`ldm` 要求 4 字节对齐 → 对齐异常。**指针本身是垃圾值**，而 `#11` 是 JNI 入口
+`Java_J_N_M1Y_1XVCN+108`，说明挂在 WebView 初始化的调用链里，还没到渲染。
+
+Via 的两处 pc（`0x6ba1460`、`0x4d426ec`）反汇编出来都是 `brk #0`，
+即 Chromium 的 `IMMEDIATE_CRASH()` / `__builtin_trap()` —— **库自己 CHECK 失败主动中止**。
+
+> 【实机】停用模块后：图库正常打开（相册/缩略图可见），Via 冷启动并渲染主页，
+> `logcat` 零 `Fatal signal`，dropbox 零新增 tombstone。因果闭合。
+
+结论：**「能装上、64 位页面能渲染」≠「能在这台 Android 6 上跑」**。
+arm32 完全不可用，arm64 会在特定路径主动 trap。想留在 106 就得接受图库/搜索打不开；
+两者不可兼得，除非换一个不触发上述分支的内核构建（未验证）。
+
 ## 回退
 
 ```bash
-adb shell su -c 'magisk module disable webview106' && adb reboot
+# 任选其一，都是可逆的
+adb shell su -c 'magisk module disable webview106'
+adb shell su -c 'touch /data/adb/modules/webview106/disable'   # 实测可用
+adb reboot
 ```
 
-系统原生 `/system/app/webview/webview.apk` 从未被改动。
+系统原生 `/system/app/webview/webview.apk` 从未被改动，停用即回到出厂内核
+（`versionName=Developer Build`、`versionCode=1`，Chromium 44/45）。
+重新启用：`rm /data/adb/modules/webview106/disable && reboot`。
