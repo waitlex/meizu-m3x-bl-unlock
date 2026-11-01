@@ -1,8 +1,9 @@
-# 04 · WebView 升级：把 Bromite 106 伪装成 `com.android.webview`
+# 04 · WebView 升级：把 Bromite 伪装成 `com.android.webview`
 
-> **先读结论：这条路在本机上不划算。** 模块能装上、64 位页面能渲染出 Chromium 106 的
-> 新特性，但**所有 32 位应用会 100% 打不开**（图库、全局搜索），Via 搜索时也会闪退。
-> 机制、反汇编证据与回退方法见文末「实机副作用」一节。
+> **结论（2026-11-01 版本二分后更新）：本机可用上限是 Bromite 98.0.4758.116，模块现已启用。**
+> 106 能装上、64 位页面能渲染，但**所有 32 位应用 100% 打不开**（图库、全局搜索），
+> Via 搜索时也会闪退；二分证明这不是 106 独有，**99 起就崩**，机制见
+> 「实机副作用」与「版本二分」两节。
 > 打包/挂载链路本身（AXML + `resources.arsc` + `lib/<isa>` 三处对齐）是打通的，可放心复用。
 
 ## 问题
@@ -155,7 +156,7 @@ adb shell su -c "cat /proc/$(adb shell pidproc)/maps" | grep libwebviewchromium
 > **不走系统 WebView provider**——`/proc/<pid>/maps` 里根本没有 `libwebviewchromium`。
 > 要享受新内核，请用走系统 WebView 的应用（HTML 查看器、各类第三方浏览器、App 内嵌页）。
 
-## ⚠ 实机副作用：32 位应用必崩（本模块现已停用）
+## ⚠ 实机副作用：106 让 32 位应用必崩（故停用，改装 98）
 
 【实机 2026-11-01 20:30】装上 106 之后，凡是走系统 WebView provider 的应用：
 
@@ -195,6 +196,66 @@ Via 的两处 pc（`0x6ba1460`、`0x4d426ec`）反汇编出来都是 `brk #0`，
 arm32 完全不可用，arm64 会在特定路径主动 trap。想留在 106 就得接受图库/搜索打不开；
 两者不可兼得，除非换一个不触发上述分支的内核构建（未验证）。
 
+## 版本二分：98 是本机上限【实机 2026-11-01 21:34】
+
+一轮 = 下载 → 改包名/重签 → 部署 → 重启 → 判据，脚本
+[`scripts/webview/bromite_round.sh`](../scripts/webview/bromite_round.sh)：
+
+```bash
+bash scripts/webview/bromite_round.sh 98.0.4758.116
+```
+
+四道门，每一道都对应一次「差点被当成成功」的失败：
+
+| 门 | 判据 | 为什么必须有 |
+| --- | --- | --- |
+| `deploy` | 设备上每个模块文件 md5 == 暂存副本 | 早期 `su -c "a && b"` 的引号 bug 让全部写操作以 uid 2000 失败，模块没动过却报 PASS |
+| `GATEVER` | `dumpsys package com.android.webview` 的 `versionName` == 本轮 tag | provider 不是候选时，后面测的是上一个内核，整轮无意义 → 直接 revert 并判 `INVALID` |
+| `GATE32` | 32 位图库起来 + `Fatal signal`=0 + 无新 tombstone/ANR | 就是本次要找的那条断崖 |
+| `GATE64` | 64 位 Via 起来并加载页面，无 fatal/新 tombstone | 证明 arm64 侧没退化 |
+
+结果：
+
+| Bromite | provider 确认 | GATE32 | 崩溃点（arm `.so` 内偏移） |
+| --- | --- | --- | --- |
+| 105.0.5195.147 | ✅ `versionName=105.0.5195.147` | ❌ | pc `023ca78e`，`fault addr 0xda…aa7` |
+| 101.0.4951.69 | ✅ | ❌ | pc `022ff156`，`fault addr 0xda…703` |
+| 99.0.4844.77 | ✅ | ❌ | pc `022b9a62`，`fault addr 0xda…856` |
+| **98.0.4758.116** | ✅ | **✅** | — |
+| 90.0.4430.204 | ✅ | ✅ | — |
+
+三个失败版本的 tombstone 全是同一形态：`ABI: 'arm'`、`SIGBUS / BUS_ADRALN`、
+12 层栈完全相同、每次只有高位随 ASLR 变化而低 12 位恒定 → 同一个未对齐的表基指针，
+不是随机内存损坏。所以 106 那次不是偶发，**断崖就在 98 与 99 之间**。
+
+98 的加严验证（不只是进程存活）：Via 里手输 `https://www.baidu.com/s?wd=localsend`
+渲染出真实搜索结果，Chromium 错误页（`net::ERR_NAME_NOT_RESOLVED`）也由新内核绘制；
+图库相册/缩略图正常；`dropbox` 的 `anr+tombstone` 计数 45 → 45，`logcat` 零 `Fatal signal`。
+
+> 【实机】`am start -a android.intent.action.VIEW -p mark.via` 会让 Via 的
+> `.Trampoline` 自己报 ANR（"no window has focus"），主线程栈停在
+> `nativePollOnce`，与内核无关 —— 别把它读成 WebView 卡死；验证渲染要用真实输入流。
+
+### 二分过程中新踩到的三个坑
+
+1. **`adb shell su -c "a && b"`**：`&&` 之后的部分被设备 shell 抢走，以 uid 2000 执行 →
+   一律 `adb shell "su -c '…'"`；要连着做多个写操作就 push 一个 `deploy.sh` 再
+   `su -c 'sh /data/local/tmp/deploy.sh'`。
+2. **AXML 包名要从 manifest 里读**：按字符串池猜包名会抓到
+   `com.android.webview.SHOW_DEV_UI` 这类常量，`axml_patch` 变成空操作，APK 仍是
+   `org.bromite.webview`，永远当不上 provider。用
+   [`manifest_info.py`](../scripts/webview/manifest_info.py) 解析 `<manifest package=…>`。
+3. **必须剥掉厂商自带签名**：Bromite 90/87 的包名本来就是 `com.android.webview`，
+   不走 `axml_patch` 就没人删 `META-INF/`，产物里会同时留下 `WEBVIEW.SF/RSA`（我们签的）
+   和 `BROMITEK.SF/RSA`（厂商的）。Android 6 的 `Signature.fromJar` 只要有一个签名者
+   校验不过就抛异常，PMS 直接**不安装这个包**：
+   `dumpsys package com.android.webview` 全空、`WebViewFactory` 报
+   `NameNotFoundException: com.android.webview`。现在无论要不要改包名都过一遍
+   `axml_patch`，并断言 `step1.apk` 里不再含 `.SF/.RSA/.DSA/.EC`。
+
+另外：Android 6 只有 `md5sum`/`sha1sum`，**没有 `sha256sum`**，用它做校验会得到空字符串，
+看起来像「内容不一致」。校验一律用 md5。
+
 ## 回退
 
 ```bash
@@ -207,3 +268,7 @@ adb reboot
 系统原生 `/system/app/webview/webview.apk` 从未被改动，停用即回到出厂内核
 （`versionName=Developer Build`、`versionCode=1`，Chromium 44/45）。
 重新启用：`rm /data/adb/modules/webview106/disable && reboot`。
+
+> 【实机 2026-11-01 21:34】本机现状：模块**已启用**，内容是二分选出的
+> `98.0.4758.116`（`versionCode=1645754520`，`targetSdk=31`）。模块 id 仍叫
+> `webview106`，只是历史名字，`module.prop` 里的 `version` 才反映真实内核。

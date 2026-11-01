@@ -1,9 +1,10 @@
 # webview106 — Magisk 模块骨架
 
-> **本机现状：已停用**（`/data/adb/modules/webview106/disable`，2026-11-01 20:30）。
-> 装上后 64 位页面能渲染 Chromium 106，但**所有 32 位应用一开就崩**
-> （图库、全局搜索 `SIGBUS`；Via 搜索 `SIGTRAP`）。原因与回退见
-> [`docs/04-webview-106.md`](../../docs/04-webview-106.md) 末尾一节。
+> **本机现状：已启用，但内容换成了 Bromite 98.0.4758.116**（2026-11-01 21:34 版本二分结论）。
+> 目录 id 仍叫 `webview106`，只是历史名字；`module.prop` 的 `version` 才是真实内核。
+> 106（以及 99/101/105）会让**所有 32 位应用一开就崩**（图库、全局搜索 `SIGBUS`；
+> Via 搜索 `SIGTRAP`），98 与 90 实测正常。机制、判据与回退见
+> [`docs/04-webview-106.md`](../../docs/04-webview-106.md)。
 
 本目录**只有 `module.prop`**。APK 与 `.so` 不在仓库里（体积 100 MB+，
 且 Bromite 二进制应由你自己下载以保证来源可信），所以这里是一个骨架，

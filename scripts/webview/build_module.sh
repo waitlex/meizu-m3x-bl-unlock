@@ -73,23 +73,47 @@ find "$STAGE" -type f -exec ls -l {} \; | awk '{print $5, $9}'
 [ "${DRY:-0}" = "1" ] && { echo "DRY=1, device untouched"; exit 0; }
 
 $ADB wait-for-device
-echo "[1/3] remounting /data/adb/modules as writable via su"
-$ADB shell su -c "mkdir -p $MOD && rm -rf $MOD/system"
+# `adb shell su -c "a && b"` hands `&& b` to the *device* shell, so b runs as
+# uid 2000 and every write is EACCES -- the module then silently keeps whatever
+# was in it before. All root writes go through one pushed script instead.
+for i in $(seq 1 60); do
+  b=$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+  u=$($ADB shell "su -c 'id -u'" 2>/dev/null | tr -d '\r')
+  [ "$b" = 1 ] && [ "$u" = 0 ] && break
+  sleep 3
+done
+[ "$b" = 1 ] && [ "$u" = 0 ] || { echo "device not ready (boot=$b su=$u)"; exit 1; }
 
-echo "[2/3] pushing (large files go through /data/local/tmp)"
+DEP=$(mktemp)
+echo "mkdir -p $MOD && rm -rf $MOD/system $MOD/disable" > "$DEP"
+echo "[1/3] pushing module files"
+for f in $(find "$STAGE" -type f); do
+  rel=${f#"$STAGE"/}; flat=$(echo "$rel" | sed 's|/|_|g')
+  $ADB push "$f" "/data/local/tmp/$flat" >/dev/null 2>&1 \
+    || $ADB push "$f" "/data/local/tmp/$flat" >/dev/null || { echo "push failed: $rel"; exit 1; }
+  { echo "mkdir -p $MOD/$(dirname "$rel")"
+    echo "cp -f /data/local/tmp/$flat $MOD/$rel"
+    echo "rm -f /data/local/tmp/$flat"
+    echo "chcon u:object_r:system_file:s0 $MOD/$rel 2>/dev/null"
+  } >> "$DEP"
+done
+$ADB push "$DEP" /data/local/tmp/deploy.sh >/dev/null
+$ADB shell "su -c 'sh /data/local/tmp/deploy.sh && rm -f /data/local/tmp/deploy.sh'" | tr -d '\r'
+rm -f "$DEP"
+
+# Android 6 has md5sum/sha1sum but *no* sha256sum, and an empty result looks
+# exactly like a mismatch -- verify with md5 and abort if the module differs.
+BAD=0
 for f in $(find "$STAGE" -type f); do
   rel=${f#"$STAGE"/}
-  $ADB push "$f" "/data/local/tmp/$(echo "$rel" | sed 's|/|_|g')"
-  $ADB shell su -c "
-    mkdir -p '$MOD/$(dirname "$rel")'
-    cp -f '/data/local/tmp/$(echo "$rel" | sed 's|/|_|g')' '$MOD/$rel'
-    rm -f '/data/local/tmp/$(echo "$rel" | sed 's|/|_|g')'
-    chcon u:object_r:system_file:s0 '$MOD/$rel' 2>/dev/null || true
-  "
+  [ "$(md5 -q "$f")" = "$($ADB shell "su -c 'md5sum $MOD/$rel 2>/dev/null'" | cut -c1-32 | tr -d '\r')" ] \
+    || { echo "DEPLOY_MISMATCH $rel"; BAD=1; }
 done
-$ADB shell su -c "ls -lR $MOD/system/app/webview | head -20"
+[ "$BAD" = 0 ] || { echo "module content does not match staging, aborting"; exit 1; }
+echo "[2/3] deploy verified"
 
 echo "[3/3] reboot"
 $ADB reboot
 echo "After boot, verify with:"
-echo "  adb shell dumpsys webviewupdate | head -20"
+echo "  adb shell dumpsys package com.android.webview | grep versionName"
+echo "  (dumpsys webviewupdate prints nothing on Flyme 5)"
