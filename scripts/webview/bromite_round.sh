@@ -196,7 +196,12 @@ echo "$OUT"
 GPID=$(echo "$OUT" | sed -n 's/GPID=//p' | tr -d '\r'); GF=$(echo "$OUT" | sed -n 's/FATAL=//p' | tr -d '\r'); T1=$(echo "$OUT" | sed -n 's/TOMB=//p' | tr -d '\r')
 G32=FAIL
 ANR1=$(adb shell "su -c 'ls /data/system/dropbox | grep -c data_app_anr'" | tr -d '\r')
-if [ -n "$GPID" ] && [ "$GF" = 0 ] && [ "$T1" = "$T0" ] && [ "$ANR1" = "$ANR0" ]; then G32=PASS; fi
+# Mapping the arm engine is what makes this gate mean something: "the 32-bit app
+# is alive" alone would also hold if the provider had quietly stayed stock.
+# lib/arm/ (not armeabi-v7a) is the entry Meizu's patched framework looks in.
+GMAP=$(adb shell "su -c 'grep -m1 -oE \"webview/lib/arm/libwebviewchromium.so\" /proc/$GPID/maps'" | tr -d '\r')
+if [ -n "$GPID" ] && [ "$GF" = 0 ] && [ "$T1" = "$T0" ] && [ "$ANR1" = "$ANR0" ] && [ -n "$GMAP" ]; then G32=PASS; fi
+echo "GATE32 pid=$GPID engine_map=$GMAP"
 log "GATE32 (32-bit gallery) = $G32"
 [ "$G32" = PASS ] || dump_new 32
 

@@ -211,7 +211,7 @@ bash scripts/webview/bromite_round.sh 98.0.4758.116
 | --- | --- | --- |
 | `deploy` | 设备上每个模块文件 md5 == 暂存副本 | 早期 `su -c "a && b"` 的引号 bug 让全部写操作以 uid 2000 失败，模块没动过却报 PASS |
 | `GATEVER` | `dumpsys package com.android.webview` 的 `versionName` == 本轮 tag | provider 不是候选时，后面测的是上一个内核，整轮无意义 → 直接 revert 并判 `INVALID` |
-| `GATE32` | 32 位图库起来 + `Fatal signal`=0 + 无新 tombstone/ANR | 就是本次要找的那条断崖 |
+| `GATE32` | 32 位图库起来 + `Fatal signal`=0 + 无新 tombstone/ANR + **`/proc/<pid>/maps` 里确实映射了 `webview/lib/arm/libwebviewchromium.so`** | 就是本次要找的那条断崖；只查「进程活着」会在 provider 悄悄没换时也报 PASS |
 | `GATE64` | 64 位 Via 起来并加载页面，无 fatal/新 tombstone | 证明 arm64 侧没退化 |
 
 结果：
@@ -228,7 +228,7 @@ bash scripts/webview/bromite_round.sh 98.0.4758.116
 12 层栈完全相同、每次只有高位随 ASLR 变化而低 12 位恒定 → 同一个未对齐的表基指针，
 不是随机内存损坏。所以 106 那次不是偶发，**断崖就在 98 与 99 之间**。
 
-98 的加严验证（不只是进程存活）：Via 里手输 `https://www.baidu.com/s?wd=localsend`
+98 的加严验证（不只是进程存活）——`GATE32 pid=4810 engine_map=webview/lib/arm/libwebviewchromium.so`：Via 里手输 `https://www.baidu.com/s?wd=localsend`
 渲染出真实搜索结果，Chromium 错误页（`net::ERR_NAME_NOT_RESOLVED`）也由新内核绘制；
 图库相册/缩略图正常；`dropbox` 的 `anr+tombstone` 计数 45 → 45，`logcat` 零 `Fatal signal`。
 
