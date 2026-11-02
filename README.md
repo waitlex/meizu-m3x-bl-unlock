@@ -101,12 +101,32 @@ scripts/
     make_samples.sh        生成 6 条解码矩阵基准片（需桌面 ffmpeg）
     bench_decode.sh        查实际选中的 codec + 帧间隔 + CPU + 截图核对
 magisk-module/webview106/  模块骨架（module.prop + README，不含 APK/.so）
+skills/meizu-m3x-flyme5/   ★ Agent skill：阶段/门控/坑 + 状态栏补丁脚本（见下节）
 LICENSE                    GPL-3.0-or-later（scripts/ 与 magisk-module/）
 CONTRIBUTING.md            反馈前的脱敏要求 + 证据判据规则
 ```
 
 > 脚本按**实际用途**命名；日志标记里的 `V74_ / V78_ / V79_` 前缀是开发时的迭代号，
 > 保留不动，这样文档里摘录的实跑日志仍能与脚本输出逐字对上。
+
+---
+
+## Agent Skill
+
+`skills/meizu-m3x-flyme5/` 是给 AI agent 用的技能包，把本仓库的判据、门控和坑压缩成
+可自动触发的流程（提到 魅蓝X / M3X / MT6757 / kamakiri2 / seccfg / meizuFlags 时命中）：
+
+```bash
+cp -r skills/meizu-m3x-flyme5 ~/.qoder-cn/skills/          # 用户级安装
+# 或项目级：cp -r skills/meizu-m3x-flyme5 <project>/.qoder/skills/
+/skills reload                                              # 然后 /meizu-m3x-flyme5
+```
+
+- `SKILL.md`：阶段与通过门、本机关键参数、判定速查表
+- `references/brom-unlock.md`：kamakiri2 逐帧、DA2 attach、seccfg/LK 哈希、错误码、已证伪路线
+- `references/webview-and-apps.md`：WebView 三处包名对齐与版本二分、状态栏 `meizuFlags` 补丁、Via/API 23 坑
+- `references/device-profile.md`：硬件、分区、SEJ 寄存器、能力上限
+- `scripts/patch_statusbar.py`：给反编译 Activity 注入 `sbarFix`（`--self-test` 离线可跑）
 
 ---
 
